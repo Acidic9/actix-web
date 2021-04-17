@@ -16,13 +16,16 @@ use actix::{
     Message as ActixMessage, SpawnHandle,
 };
 use actix_codec::{Decoder, Encoder};
-use actix_http::ws::{hash_key, Codec};
 pub use actix_http::ws::{
     CloseCode, CloseReason, Frame, HandshakeError, Message, ProtocolError,
 };
-use actix_web::dev::HttpResponseBuilder;
+use actix_http::{
+    http::HeaderValue,
+    ws::{hash_key, Codec},
+};
 use actix_web::error::{Error, PayloadError};
 use actix_web::http::{header, Method, StatusCode};
+use actix_web::HttpResponseBuilder;
 use actix_web::{HttpRequest, HttpResponse};
 use bytes::{Bytes, BytesMut};
 use bytestring::ByteString;
@@ -50,7 +53,7 @@ where
 ///
 /// If successful, returns a pair where the first item is an address for the
 /// created actor and the second item is the response that should be returned
-/// from the websocket request.
+/// from the WebSocket request.
 pub fn start_with_addr<A, T>(
     actor: A,
     req: &HttpRequest,
@@ -66,7 +69,7 @@ where
     Ok((addr, res.streaming(out_stream)))
 }
 
-/// Do websocket handshake and start ws actor.
+/// Do WebSocket handshake and start ws actor.
 ///
 /// `protocols` is a sequence of known protocols.
 pub fn start_with_protocols<A, T>(
@@ -84,7 +87,7 @@ where
     Ok(res.streaming(WebsocketContext::create(actor, stream)))
 }
 
-/// Prepare `WebSocket` handshake response.
+/// Prepare WebSocket handshake response.
 ///
 /// This function returns handshake `HttpResponse`, ready to send to peer.
 /// It does not perform any IO.
@@ -92,7 +95,7 @@ pub fn handshake(req: &HttpRequest) -> Result<HttpResponseBuilder, HandshakeErro
     handshake_with_protocols(req, &[])
 }
 
-/// Prepare `WebSocket` handshake response.
+/// Prepare WebSocket handshake response.
 ///
 /// This function returns handshake `HttpResponse`, ready to send to peer.
 /// It does not perform any IO.
@@ -109,7 +112,7 @@ pub fn handshake_with_protocols(
         return Err(HandshakeError::GetMethodRequired);
     }
 
-    // Check for "UPGRADE" to websocket header
+    // check for "UPGRADE" to WebSocket header
     let has_hdr = if let Some(hdr) = req.headers().get(&header::UPGRADE) {
         if let Ok(s) = hdr.to_str() {
             s.to_ascii_lowercase().contains("websocket")
@@ -166,7 +169,11 @@ pub fn handshake_with_protocols(
 
     let mut response = HttpResponse::build(StatusCode::SWITCHING_PROTOCOLS)
         .upgrade("websocket")
-        .insert_header((header::SEC_WEBSOCKET_ACCEPT, key))
+        .insert_header((
+            header::SEC_WEBSOCKET_ACCEPT,
+            // key is known to be header value safe ascii
+            HeaderValue::from_bytes(&key).unwrap(),
+        ))
         .take();
 
     if let Some(protocol) = protocol {
@@ -501,7 +508,6 @@ where
 
         if !*this.closed {
             loop {
-                this = self.as_mut().project();
                 match Pin::new(&mut this.stream).poll_next(cx) {
                     Poll::Ready(Some(Ok(chunk))) => {
                         this.buf.extend_from_slice(&chunk[..]);
